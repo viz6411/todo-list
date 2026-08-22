@@ -1,8 +1,8 @@
-"""Todo-list backend API with file-based JSON storage."""
+"""Todo-list backend API with file-based JSON storage and frontend."""
 import json
 import os
 import uuid
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 
 
 def create_app(storage_path=None):
@@ -10,7 +10,10 @@ def create_app(storage_path=None):
     if storage_path is None:
         storage_path = os.path.join(os.path.dirname(__file__), 'todos.json')
 
-    app = Flask(__name__)
+    # Frontend static files live in ../frontend relative to this file
+    frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'frontend')
+
+    app = Flask(__name__, static_folder=frontend_dir, static_url_path='/static')
     app.config['STORAGE_PATH'] = storage_path
 
     def load_todos():
@@ -66,6 +69,10 @@ def create_app(storage_path=None):
             return jsonify({"error": "not found"}), 404
         save_todos(filtered)
         return '', 204
+
+    @app.route('/')
+    def index():
+        return send_from_directory(frontend_dir, 'index.html')
 
     return app
 
