@@ -92,7 +92,7 @@ class GoogleSheetsBackend:
             todo = {
                 "id": rec.get("id", ""),
                 "title": rec.get("title", ""),
-                "completed": bool(rec.get("completed", False)),
+                "completed": str(rec.get("completed", "False")).lower() == "true",
             }
             todos.append(todo)
         return todos
