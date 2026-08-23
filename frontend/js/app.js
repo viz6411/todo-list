@@ -7,6 +7,7 @@
     'use strict';
 
     const API_BASE = '/api/todos';
+    const SETTINGS_API = '/api/settings';
     let todos = [];
     let currentFilter = 'all';
 
@@ -17,6 +18,12 @@
     const summary = document.getElementById('summary');
     const errorMsg = document.getElementById('error-msg');
     const filterBtns = document.querySelectorAll('.filter-btn');
+
+    // Settings DOM Elements
+    const settingsForm = document.getElementById('settings-form');
+    const spreadsheetIdInput = document.getElementById('spreadsheet-id');
+    const serviceAccountFileInput = document.getElementById('service-account-file');
+    const settingsMsg = document.getElementById('settings-msg');
 
     /**
      * Fetch all todos from the API
@@ -198,6 +205,71 @@
         });
     });
 
+    /**
+     * Show settings message
+     */
+    function showSettingsMsg(msg, type) {
+        settingsMsg.textContent = msg;
+        settingsMsg.className = 'settings-msg ' + type;
+    }
+
+    /**
+     * Load current settings from the API
+     */
+    async function loadSettings() {
+        try {
+            const response = await fetch(SETTINGS_API);
+            if (!response.ok) return;
+            const data = await response.json();
+            if (spreadsheetIdInput) spreadsheetIdInput.value = data.spreadsheet_id || '';
+            if (serviceAccountFileInput) serviceAccountFileInput.value = data.service_account_file || '';
+        } catch (err) {
+            // Silently fail — settings are optional
+        }
+    }
+
+    /**
+     * Save settings to the API
+     */
+    async function saveSettings() {
+        const spreadsheetId = spreadsheetIdInput ? spreadsheetIdInput.value.trim() : '';
+        const serviceAccountFile = serviceAccountFileInput ? serviceAccountFileInput.value.trim() : '';
+
+        try {
+            const response = await fetch(SETTINGS_API, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    spreadsheet_id: spreadsheetId,
+                    service_account_file: serviceAccountFile,
+                })
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                showSettingsMsg(data.error || 'Failed to save settings', 'error');
+                return;
+            }
+
+            showSettingsMsg('Settings saved successfully!', 'success');
+            // Update the displayed values in case they were normalized
+            const saved = await response.json();
+            if (spreadsheetIdInput) spreadsheetIdInput.value = saved.spreadsheet_id || '';
+            if (serviceAccountFileInput) serviceAccountFileInput.value = saved.service_account_file || '';
+        } catch (err) {
+            showSettingsMsg('Network error: ' + err.message, 'error');
+        }
+    }
+
+    // Settings form event listener
+    if (settingsForm) {
+        settingsForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            saveSettings();
+        });
+    }
+
     // Initialize
     fetchTodos();
+    loadSettings();
 })();
