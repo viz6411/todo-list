@@ -33,13 +33,16 @@ def create_app(storage_path=None):
 
     @app.route('/api/todos', methods=['POST'])
     def create_todo():
-        data = request.get_json()
-        if not data or 'title' not in data:
+        data = request.get_json(silent=True)
+        if not data:
             return jsonify({"error": "title is required"}), 400
+        title = data.get("title", "")
+        if not title or not str(title).strip():
+            return jsonify({"error": "title is required and cannot be empty"}), 400
 
         todo = {
             "id": str(uuid.uuid4()),
-            "title": data["title"],
+            "title": str(title).strip(),
             "completed": False
         }
         todos = load_todos()
@@ -49,7 +52,9 @@ def create_app(storage_path=None):
 
     @app.route('/api/todos/<todo_id>', methods=['PATCH'])
     def update_todo(todo_id):
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({"error": "invalid or missing JSON body"}), 400
         todos = load_todos()
         for todo in todos:
             if todo["id"] == todo_id:

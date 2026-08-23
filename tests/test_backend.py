@@ -81,6 +81,57 @@ def test_toggle_todo_completed(app):
     assert data["completed"] is True
 
 
+def test_patch_with_no_body_returns_400(app):
+    """PATCH /api/todos/<id> with no JSON body should return 400."""
+    client = app.test_client()
+    create_resp = client.post('/api/todos', json={"title": "Test"})
+    todo_id = create_resp.get_json()["id"]
+    # Send PATCH with no Content-Type and no body
+    response = client.patch(f'/api/todos/{todo_id}')
+    assert response.status_code == 400
+
+
+def test_patch_with_invalid_json_returns_400(app):
+    """PATCH /api/todos/<id> with malformed JSON should return 400."""
+    client = app.test_client()
+    create_resp = client.post('/api/todos', json={"title": "Test"})
+    todo_id = create_resp.get_json()["id"]
+    response = client.patch(
+        f'/api/todos/{todo_id}',
+        data='not json',
+        content_type='application/json'
+    )
+    assert response.status_code == 400
+
+
+def test_post_with_empty_title_returns_400(app):
+    """POST /api/todos with empty title should return 400."""
+    client = app.test_client()
+    response = client.post('/api/todos', json={"title": ""})
+    assert response.status_code == 400
+
+
+def test_post_with_whitespace_only_title_returns_400(app):
+    """POST /api/todos with whitespace-only title should return 400."""
+    client = app.test_client()
+    response = client.post('/api/todos', json={"title": "   "})
+    assert response.status_code == 400
+
+
+def test_patch_nonexistent_id_returns_404(app):
+    """PATCH /api/todos/<id> with non-existent id should return 404."""
+    client = app.test_client()
+    response = client.patch('/api/todos/nonexistent', json={"title": "Updated"})
+    assert response.status_code == 404
+
+
+def test_delete_nonexistent_id_returns_404(app):
+    """DELETE /api/todos/<id> with non-existent id should return 404."""
+    client = app.test_client()
+    response = client.delete('/api/todos/nonexistent')
+    assert response.status_code == 404
+
+
 @pytest.fixture
 def app():
     """Create a fresh test app with empty storage."""
