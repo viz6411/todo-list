@@ -1,34 +1,52 @@
-"""Todo-list backend API with file-based JSON storage and frontend."""
-import json
+"""Todo-list backend API with pluggable storage backend and frontend."""
 import os
+import sys
 import uuid
 from flask import Flask, jsonify, request, send_from_directory
 
+# Support both `from backend.server import ...` and `from server import ...`
+try:
+    from .storage import create_backend
+except ImportError:
+    # Fallback: run as top-level module (e.g. old tests do `from server import ...`)
+    _here = os.path.dirname(__file__)
+    if _here not in sys.path:
+        sys.path.insert(0, _here)
+    from storage import create_backend
 
-def create_app(storage_path=None):
-    """Create and configure the Flask app."""
-    if storage_path is None:
-        storage_path = os.path.join(os.path.dirname(__file__), 'todos.json')
+
+def create_app(backend_type="json", **backend_kwargs):
+    """Create and configure the Flask app.
+
+    Args:
+        backend_type: 'json' (default) or 'sheets'.
+            For backward compatibility, passing a path ending in .json is
+            treated as the old-style storage_path argument.
+        **backend_kwargs: Keyword args forwarded to the backend factory.
+            - json: storage_path
+            - sheets: service_account_file, spreadsheet_id, sheet_name
+    """
+    # Legacy: create_app("/path/to/todos.json")
+    if isinstance(backend_type, str) and backend_type.endswith(".json"):
+        backend_kwargs.setdefault("storage_path", backend_type)
+        backend_type = "json"
+
+    if backend_type == "json":
+        storage_path = backend_kwargs.pop("storage_path", None)
+        if storage_path is None:
+            storage_path = os.path.join(os.path.dirname(__file__), "todos.json")
+        backend_kwargs["storage_path"] = storage_path
+
+    storage = create_backend(backend_type, **backend_kwargs)
 
     # Frontend static files live in ../frontend relative to this file
     frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'frontend')
 
     app = Flask(__name__, static_folder=frontend_dir, static_url_path='/static')
-    app.config['STORAGE_PATH'] = storage_path
-
-    def load_todos():
-        if os.path.exists(storage_path):
-            with open(storage_path, 'r') as f:
-                return json.load(f)
-        return []
-
-    def save_todos(todos):
-        with open(storage_path, 'w') as f:
-            json.dump(todos, f, indent=2)
 
     @app.route('/api/todos', methods=['GET'])
     def get_todos():
-        todos = load_todos()
+        todos = storage.load_todos()
         return jsonify(todos), 200
 
     @app.route('/api/todos', methods=['POST'])
@@ -45,9 +63,9 @@ def create_app(storage_path=None):
             "title": str(title).strip(),
             "completed": False
         }
-        todos = load_todos()
+        todos = storage.load_todos()
         todos.append(todo)
-        save_todos(todos)
+        storage.save_todos(todos)
         return jsonify(todo), 201
 
     @app.route('/api/todos/<todo_id>', methods=['PATCH'])
@@ -55,24 +73,24 @@ def create_app(storage_path=None):
         data = request.get_json(silent=True)
         if not data:
             return jsonify({"error": "invalid or missing JSON body"}), 400
-        todos = load_todos()
+        todos = storage.load_todos()
         for todo in todos:
             if todo["id"] == todo_id:
                 if "title" in data:
                     todo["title"] = data["title"]
                 if "completed" in data:
                     todo["completed"] = data["completed"]
-                save_todos(todos)
+                storage.save_todos(todos)
                 return jsonify(todo), 200
         return jsonify({"error": "not found"}), 404
 
     @app.route('/api/todos/<todo_id>', methods=['DELETE'])
     def delete_todo(todo_id):
-        todos = load_todos()
+        todos = storage.load_todos()
         filtered = [t for t in todos if t["id"] != todo_id]
         if len(filtered) == len(todos):
             return jsonify({"error": "not found"}), 404
-        save_todos(filtered)
+        storage.save_todos(filtered)
         return '', 204
 
     @app.route('/')
