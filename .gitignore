@@ -25,3 +25,5 @@ venv/
 .coverage
 htmlcov/
 .tox/
+# Runtime data
+**/todos.json
