@@ -177,24 +177,56 @@ class TestGoogleSheetsBackend:
         assert todos[5]["completed"] is False  # "no"
 
     def test_save_and_load_roundtrip(self, sheets_backend, mock_gspread):
-        """save_todos then load_todos should preserve data."""
+        """Full roundtrip: save_todos writes to sheet, load_todos reads back.
+
+        gspread returns all cell values as strings, so booleans written as
+        True/False become 'True'/'False' strings on read-back. The coercion
+        in load_todos converts them back to proper booleans.
+
+        The mock is wired so that rows captured by save_todos (via update)
+        are fed back through get_all_records as string-valued dicts —
+        simulating real gspread behaviour — and then load_todos reads them.
+        """
         gc_mock = mock_gspread.authorize.return_value
         sp_mock = gc_mock.open_by_id.return_value
         ws_mock = sp_mock.worksheet.return_value
 
-        todos = [
+        # Shared state between save and load: save_todos calls update(rows),
+        # and load_todos calls get_all_records() which returns the saved rows.
+        saved_rows = []
+
+        def capture_update(rows):
+            """save_todos calls ws.update(rows) — capture the rows."""
+            saved_rows[:] = rows
+
+        def fake_get_all_records():
+            """load_todos calls ws.get_all_records() — return saved rows as strings."""
+            if len(saved_rows) <= 1:
+                return []
+            header = saved_rows[0]
+            return [dict(zip(header, row)) for row in saved_rows[1:]]
+
+        ws_mock.update.side_effect = capture_update
+        ws_mock.get_all_records.side_effect = fake_get_all_records
+
+        # --- STEP 1: save ---
+        input_todos = [
             {"id": "r1", "title": "Roundtrip", "completed": False},
             {"id": "r2", "title": "Done", "completed": True},
         ]
-        sheets_backend.save_todos(todos)
+        sheets_backend.save_todos(input_todos)
 
-        # Verify update was called with correct rows
-        call_args = ws_mock.update.call_args
-        data = call_args[0][0]
-        assert len(data) == 3  # header + 2 rows
-        assert data[0] == ["id", "title", "completed"]
-        assert data[1] == ["r1", "Roundtrip", False]
-        assert data[2] == ["r2", "Done", True]
+        # --- STEP 2: load ---
+        loaded = sheets_backend.load_todos()
+
+        # --- STEP 3: verify roundtrip ---
+        assert len(loaded) == 2
+        assert loaded[0]["id"] == "r1"
+        assert loaded[0]["title"] == "Roundtrip"
+        assert loaded[0]["completed"] is False
+        assert loaded[1]["id"] == "r2"
+        assert loaded[1]["title"] == "Done"
+        assert loaded[1]["completed"] is True
 
     def test_init_fails_on_spreadsheet_error(self, mocker):
         """__init__ should raise RuntimeError when spreadsheet cannot be opened."""
