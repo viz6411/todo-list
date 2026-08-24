@@ -154,6 +154,104 @@ class TestGoogleSheetsBackend:
         assert len(data) == 1  # only header
         assert data[0] == ["id", "title", "completed"]
 
+    def test_load_todos_completed_coercion_various_strings(self, sheets_backend, mock_gspread):
+        """load_todos should coerce various string representations of completed."""
+        gc_mock = mock_gspread.authorize.return_value
+        sp_mock = gc_mock.open_by_id.return_value
+        ws_mock = sp_mock.worksheet.return_value
+        ws_mock.get_all_records.return_value = [
+            {"id": "c1", "title": "A", "completed": "True"},
+            {"id": "c2", "title": "B", "completed": "1"},
+            {"id": "c3", "title": "C", "completed": "yes"},
+            {"id": "c4", "title": "D", "completed": "False"},
+            {"id": "c5", "title": "E", "completed": "0"},
+            {"id": "c6", "title": "F", "completed": "no"},
+        ]
+
+        todos = sheets_backend.load_todos()
+        assert todos[0]["completed"] is True   # "True"
+        assert todos[1]["completed"] is True   # "1"
+        assert todos[2]["completed"] is True   # "yes"
+        assert todos[3]["completed"] is False  # "False"
+        assert todos[4]["completed"] is False  # "0"
+        assert todos[5]["completed"] is False  # "no"
+
+    def test_save_and_load_roundtrip(self, sheets_backend, mock_gspread):
+        """save_todos then load_todos should preserve data."""
+        gc_mock = mock_gspread.authorize.return_value
+        sp_mock = gc_mock.open_by_id.return_value
+        ws_mock = sp_mock.worksheet.return_value
+
+        todos = [
+            {"id": "r1", "title": "Roundtrip", "completed": False},
+            {"id": "r2", "title": "Done", "completed": True},
+        ]
+        sheets_backend.save_todos(todos)
+
+        # Verify update was called with correct rows
+        call_args = ws_mock.update.call_args
+        data = call_args[0][0]
+        assert len(data) == 3  # header + 2 rows
+        assert data[0] == ["id", "title", "completed"]
+        assert data[1] == ["r1", "Roundtrip", False]
+        assert data[2] == ["r2", "Done", True]
+
+    def test_init_fails_on_spreadsheet_error(self, mocker):
+        """__init__ should raise RuntimeError when spreadsheet cannot be opened."""
+        mocker.patch('storage.ServiceCredentials').from_service_account_file.return_value = mocker.Mock()
+        from gspread.exceptions import GSpreadException
+        gs_mock = mocker.patch('storage.gspread')
+        gc_mock = gs_mock.authorize.return_value
+        gc_mock.open_by_id.side_effect = GSpreadException("Access denied")
+
+        import pytest
+        with pytest.raises(RuntimeError, match="Cannot open spreadsheet"):
+            from storage import GoogleSheetsBackend
+            GoogleSheetsBackend(
+                service_account_file='/tmp/fake_sa.json',
+                spreadsheet_id='bad-id',
+                sheet_name='Todos',
+            )
+
+    def test_load_todos_handles_missing_fields(self, sheets_backend, mock_gspread):
+        """load_todos should handle records with missing columns gracefully."""
+        gc_mock = mock_gspread.authorize.return_value
+        sp_mock = gc_mock.open_by_id.return_value
+        ws_mock = sp_mock.worksheet.return_value
+        ws_mock.get_all_records.return_value = [
+            {"id": "m1", "title": "Has all fields", "completed": "False"},
+            {"id": "m2"},  # missing title and completed
+            {"title": "No ID", "completed": "True"},  # missing id
+        ]
+
+        todos = sheets_backend.load_todos()
+        assert len(todos) == 3
+        assert todos[0]["completed"] is False
+        assert todos[1]["title"] == ""
+        assert todos[1]["completed"] is False
+        assert todos[2]["id"] == ""
+        assert todos[2]["completed"] is True
+
+
+    def test_create_backend_sheets_type(self, mocker):
+        """create_backend with backend_type='sheets' should return GoogleSheetsBackend."""
+        mocker.patch('storage.gspread')
+        mocker.patch('storage.ServiceCredentials').from_service_account_file.return_value = mocker.Mock()
+        from storage import create_backend, GoogleSheetsBackend
+        backend = create_backend(
+            backend_type='sheets',
+            service_account_file='/tmp/fake.json',
+            spreadsheet_id='fake-id',
+        )
+        assert isinstance(backend, GoogleSheetsBackend)
+
+    def test_create_backend_invalid_type_raises(self):
+        """create_backend with unknown type should raise ValueError."""
+        from storage import create_backend
+        import pytest
+        with pytest.raises(ValueError, match="Unknown backend_type"):
+            create_backend(backend_type='invalid')
+
 
 class TestStorageBackendInterface:
     """Test that both backends satisfy the StorageBackend interface."""
