@@ -83,7 +83,7 @@ class TestGoogleSheetsBackend:
         # sees the right behaviour.
         mocker.patch('storage.ServiceCredentials').from_service_account_file.return_value = mocker.Mock()
         gc_mock = mock_gspread.authorize.return_value
-        sp_mock = gc_mock.open_by_id.return_value
+        sp_mock = gc_mock.open_by_key.return_value
         sp_mock.worksheet.side_effect = WorksheetNotFound('Sheet not found')
 
         GoogleSheetsBackend(
@@ -96,7 +96,7 @@ class TestGoogleSheetsBackend:
     def test_load_todos_empty_sheet(self, sheets_backend, mock_gspread):
         """load_todos on an empty sheet returns []."""
         gc_mock = mock_gspread.authorize.return_value
-        sp_mock = gc_mock.open_by_id.return_value
+        sp_mock = gc_mock.open_by_key.return_value
         ws_mock = sp_mock.worksheet.return_value
         ws_mock.get_all_records.return_value = []
 
@@ -106,7 +106,7 @@ class TestGoogleSheetsBackend:
     def test_load_todos_with_data(self, sheets_backend, mock_gspread):
         """load_todos should return todos from sheet records."""
         gc_mock = mock_gspread.authorize.return_value
-        sp_mock = gc_mock.open_by_id.return_value
+        sp_mock = gc_mock.open_by_key.return_value
         ws_mock = sp_mock.worksheet.return_value
         ws_mock.get_all_records.return_value = [
             {"id": "t1", "title": "Todo 1", "completed": False},
@@ -121,7 +121,7 @@ class TestGoogleSheetsBackend:
     def test_save_todos_writes_rows(self, sheets_backend, mock_gspread):
         """save_todos should clear and write rows to the sheet."""
         gc_mock = mock_gspread.authorize.return_value
-        sp_mock = gc_mock.open_by_id.return_value
+        sp_mock = gc_mock.open_by_key.return_value
         ws_mock = sp_mock.worksheet.return_value
 
         todos = [
@@ -142,7 +142,7 @@ class TestGoogleSheetsBackend:
     def test_save_todos_empty_list(self, sheets_backend, mock_gspread):
         """save_todos with empty list should write only header."""
         gc_mock = mock_gspread.authorize.return_value
-        sp_mock = gc_mock.open_by_id.return_value
+        sp_mock = gc_mock.open_by_key.return_value
         ws_mock = sp_mock.worksheet.return_value
 
         sheets_backend.save_todos([])

@@ -78,7 +78,7 @@ class TestOAuth2BearerToken:
         mocker.patch('storage.AuthRequest')
         gc_mock = mocker.patch('storage.gspread')
         gc_auth = gc_mock.authorize.return_value
-        sp_mock = gc_auth.open_by_id.return_value
+        sp_mock = gc_auth.open_by_key.return_value
         _ = sp_mock.worksheet.return_value
         return creds_mock
 
@@ -99,7 +99,7 @@ class TestOAuth2BearerToken:
         mocker.patch('storage.AuthRequest')
         gc_mock = mocker.patch('storage.gspread')
         gc_auth = gc_mock.authorize.return_value
-        sp_mock = gc_auth.open_by_id.return_value
+        sp_mock = gc_auth.open_by_key.return_value
         _ = sp_mock.worksheet.return_value
 
         backend = GoogleSheetsBackend(
@@ -134,7 +134,7 @@ class TestOAuth2BearerToken:
         from storage import GoogleSheetsBackend
         gc_mock = mocker.patch('storage.gspread')
         gc_auth = gc_mock.authorize.return_value
-        sp_mock = gc_auth.open_by_id.return_value
+        sp_mock = gc_auth.open_by_key.return_value
         _ = sp_mock.worksheet.return_value
 
         _ = GoogleSheetsBackend(
@@ -167,7 +167,7 @@ class TestOAuth2TokenRefresh:
         creds_mock.refresh = mocker.Mock(side_effect=lambda req: setattr(creds_mock, 'expired', False))
         gc_mock = mocker.patch('storage.gspread')
         gc_auth = gc_mock.authorize.return_value
-        sp_mock = gc_auth.open_by_id.return_value
+        sp_mock = gc_auth.open_by_key.return_value
         _ = sp_mock.worksheet.return_value
         return creds_mock
 
@@ -176,7 +176,7 @@ class TestOAuth2TokenRefresh:
         from storage import GoogleSheetsBackend
         gc_mock = mocker.patch('storage.gspread')
         gc_auth = gc_mock.authorize.return_value
-        sp_mock = gc_auth.open_by_id.return_value
+        sp_mock = gc_auth.open_by_key.return_value
         _ = sp_mock.worksheet.return_value
 
         backend = GoogleSheetsBackend(

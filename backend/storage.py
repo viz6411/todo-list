@@ -109,9 +109,9 @@ class GoogleSheetsBackend:
         else:
             self._init_service_account()
 
-        # Open spreadsheet
+        # Open spreadsheet (open_by_key works with spreadsheet ID)
         try:
-            spreadsheet = self._gc.open_by_id(self._spreadsheet_id)
+            spreadsheet = self._gc.open_by_key(self._spreadsheet_id)
         except GSpreadException as exc:
             raise RuntimeError(
                 f"Cannot open spreadsheet {self._spreadsheet_id}: {exc}"
