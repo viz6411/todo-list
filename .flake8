@@ -3,6 +3,7 @@ max-line-length = 120
 ignore = E501,W503
 exclude = .venv
 per-file-ignores =
+    app.py:E402
     backend/server.py:C901
     tests/test_frontend_api.py:F401,W293
     tests/test_frontend_settings.py:E402
