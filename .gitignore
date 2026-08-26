@@ -27,3 +27,6 @@ htmlcov/
 .tox/
 # Runtime data
 **/todos.json
+**/settings.json
+# Encryption key files (auto-generated)
+[A-Za-z0-9_-]{43}
