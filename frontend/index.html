@@ -35,6 +35,23 @@
         <!-- Summary -->
         <div class="summary" id="summary"></div>
 
+        <!-- Settings section -->
+        <details class="settings-section" id="settings-section">
+            <summary class="settings-toggle">⚙️ Google Sheets Settings</summary>
+            <form id="settings-form" class="settings-form">
+                <div class="form-group">
+                    <label for="spreadsheet-id">Spreadsheet ID</label>
+                    <input type="text" id="spreadsheet-id" placeholder="Google Spreadsheet ID" />
+                </div>
+                <div class="form-group">
+                    <label for="service-account-file">Service Account Key Path</label>
+                    <input type="text" id="service-account-file" placeholder="/path/to/service-account-key.json" />
+                </div>
+                <button type="submit" id="save-settings-btn" class="save-settings-btn">Save Settings</button>
+                <div class="settings-msg" id="settings-msg"></div>
+            </form>
+        </details>
+
         <!-- Error message -->
         <div class="error-msg" id="error-msg"></div>
     </div>

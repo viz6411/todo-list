@@ -181,6 +181,82 @@ h1 {
     text-align: center;
 }
 
+/* Settings section */
+.settings-section {
+    margin-top: 1.5rem;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    background: #fafafa;
+}
+
+.settings-toggle {
+    cursor: pointer;
+    font-weight: 600;
+    color: #2c3e50;
+    padding: 0.5rem 0;
+}
+
+.settings-form {
+    padding: 1rem 0 0.5rem;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-size: 0.9rem;
+    color: #555;
+}
+
+.form-group input[type="text"] {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    transition: border-color 0.2s;
+}
+
+.form-group input[type="text"]:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+.save-settings-btn {
+    padding: 0.65rem 1.25rem;
+    background: #27ae60;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 0.5rem;
+}
+
+.save-settings-btn:hover {
+    background: #219a52;
+}
+
+.settings-msg {
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    text-align: center;
+    min-height: 1.2em;
+}
+
+.settings-msg.success {
+    color: #27ae60;
+}
+
+.settings-msg.error {
+    color: #c0392b;
+}
+
 /* Responsive adjustments */
 @media (max-width: 480px) {
     body {

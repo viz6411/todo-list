@@ -1,16 +1,16 @@
 # Todo List
 
-A web-based todo list application built with Flask (backend) and vanilla JavaScript (frontend). Supports pluggable storage backends — local JSON file for development, Google Sheets for cloud persistence.
+A Flask-based todo list application with a web frontend, pluggable storage backends (local JSON file or Google Sheets), and a CI/CD pipeline.
 
 ## Features
 
-- Create, update, toggle, and delete todos via a clean web UI
-- Filter todos: All / Active / Completed
-- Pluggable storage backends:
-  - **JSON file** — zero-config, perfect for local development
-  - **Google Sheets** — cloud persistence via gspread + google-auth
-- RESTful JSON API (`/api/todos`)
-- Responsive design, works on mobile
+- **REST API** — CRUD operations for todos via `/api/todos`
+- **Web frontend** — Browser-based interface at `/`
+- **Pluggable storage** — Local JSON file (default) or Google Sheets via service account
+- **Settings management** — Persisted settings with `/api/settings` for backend configuration
+- **Auto-backend selection** — Automatically uses Google Sheets when valid credentials are found
+- **CI/CD** — GitHub Actions run linting (flake8) and tests (pytest) on every push
+- **Docker** — Multi-stage Docker build with docker-compose for containerized deployment
 
 ## Requirements
 
@@ -38,7 +38,7 @@ pip install -r requirements.txt
 python backend/server.py
 ```
 
-Open http://localhost:5000 in your browser.
+The app starts on `http://localhost:5000`.
 
 ### Option B — Docker Compose
 
@@ -116,6 +116,8 @@ All API endpoints return JSON.
 | `POST` | `/api/todos` | Create a new todo |
 | `PATCH` | `/api/todos/<id>` | Update a todo |
 | `DELETE` | `/api/todos/<id>` | Delete a todo |
+| `GET` | `/api/settings` | Get current settings |
+| `POST` | `/api/settings` | Save settings (`{"spreadsheet_id": "...", "service_account_file": "..."}`) |
 
 ### Create Todo
 
@@ -174,6 +176,8 @@ pytest tests/ -v
 docker compose run --rm app pytest tests/ -v
 ```
 
+71 tests cover API logic, frontend integration, settings management, and storage backends.
+
 ## Environment Variables Reference
 
 | Variable | Default | Description |
@@ -183,6 +187,12 @@ docker compose run --rm app pytest tests/ -v
 | `SERVICE_ACCOUNT_FILE` | — | Path to Google service account JSON key |
 | `SPREADSHEET_ID` | — | Google Spreadsheet ID |
 | `SHEET_NAME` | `Todos` | Worksheet name |
+
+## CI/CD
+
+GitHub Actions runs on every push to `main`:
+1. Linting with flake8
+2. Tests with pytest
 
 ## License
 
