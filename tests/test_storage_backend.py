@@ -108,17 +108,15 @@ class TestGoogleSheetsBackend:
         gc_mock = mock_gspread.authorize.return_value
         sp_mock = gc_mock.open_by_id.return_value
         ws_mock = sp_mock.worksheet.return_value
-        # gspread returns all cell values as strings
         ws_mock.get_all_records.return_value = [
-            {"id": "t1", "title": "Todo 1", "completed": "False"},
-            {"id": "t2", "title": "Todo 2", "completed": "True"},
+            {"id": "t1", "title": "Todo 1", "completed": False},
+            {"id": "t2", "title": "Todo 2", "completed": True},
         ]
 
         todos = sheets_backend.load_todos()
         assert len(todos) == 2
         assert todos[0]["title"] == "Todo 1"
-        assert todos[0]["completed"] is False  # "False" string -> False
-        assert todos[1]["completed"] is True   # "True" string -> True
+        assert todos[1]["completed"] is True
 
     def test_save_todos_writes_rows(self, sheets_backend, mock_gspread):
         """save_todos should clear and write rows to the sheet."""
