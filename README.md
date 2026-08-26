@@ -6,8 +6,8 @@ A Flask-based todo list application with a web frontend, pluggable storage backe
 
 - **REST API** — CRUD operations for todos via `/api/todos`
 - **Web frontend** — Browser-based interface at `/`
-- **Pluggable storage** — Local JSON file (default) or Google Sheets via service account
-- **Settings management** — Persisted settings with `/api/settings` for backend configuration
+- **Pluggable storage** — Local JSON file (default) or Google Sheets via service account or OAuth2
+- **Settings management** — Persisted settings with `/api/settings` for backend configuration, including encrypted credentials
 - **Auto-backend selection** — Automatically uses Google Sheets when valid credentials are found
 - **CI/CD** — GitHub Actions run linting (flake8) and tests (pytest) on every push
 - **Docker** — Multi-stage Docker build with docker-compose for containerized deployment
@@ -82,11 +82,13 @@ Set the following environment variables:
 | Variable | Description |
 |---|---|
 | `BACKEND_TYPE` | Set to `sheets` to enable Google Sheets backend |
-| `SERVICE_ACCOUNT_FILE` | Path to the Google service account JSON key file |
+| `SERVICE_ACCOUNT_FILE` | Path to the Google service account JSON key file (legacy auth) |
 | `SPREADSHEET_ID` | The Google Spreadsheet ID (from the URL) |
 | `SHEET_NAME` | Worksheet name (default: `Todos`) |
+| `OAUTH_CREDENTIALS` | Path to OAuth2 credentials JSON file (OAuth2 user auth) |
+| `OAUTH_REFRESH_TOKEN` | OAuth2 refresh token for persistent authentication |
 
-Example:
+Example (Service Account):
 
 ```bash
 export BACKEND_TYPE=sheets
@@ -97,7 +99,20 @@ export SHEET_NAME=MyTodos
 python backend/server.py
 ```
 
+Example (OAuth2):
+
+```bash
+export BACKEND_TYPE=sheets
+export OAUTH_CREDENTIALS=/keys/oauth2.json
+export SPREADSHEET_ID=1BxiMVs0XRA5nFMzKZb7ZnKlBbNPDsr
+export SHEET_NAME=MyTodos
+
+python backend/server.py
+```
+
 ### Google Sheets Setup
+
+#### Service Account (Legacy)
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project (or select an existing one)
@@ -105,6 +120,19 @@ python backend/server.py
 4. Create a **service account** and download the JSON key file
 5. Create a Google Spreadsheet and copy its ID from the URL
 6. Share the spreadsheet with the service account email (editor access)
+
+#### OAuth2 (Recommended)
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable the **Google Sheets API** and **Google Drive API**
+3. Create an **OAuth2 client ID** (Desktop application type)
+4. Download the `client_secret.json` file
+5. Use the OAuth2 flow to obtain a refresh token:
+   ```bash
+   # Use google-auth-library or a tool like gcloud auth application-default login
+   ```
+6. Store the credentials (including refresh_token) in a JSON file
+7. The refresh token allows persistent authentication without re-authorizing
 
 ## API Reference
 
@@ -187,6 +215,8 @@ docker compose run --rm app pytest tests/ -v
 | `SERVICE_ACCOUNT_FILE` | — | Path to Google service account JSON key |
 | `SPREADSHEET_ID` | — | Google Spreadsheet ID |
 | `SHEET_NAME` | `Todos` | Worksheet name |
+| `OAUTH_CREDENTIALS` | — | Path to OAuth2 credentials JSON file |
+| `OAUTH_REFRESH_TOKEN` | — | OAuth2 refresh token for persistent auth |
 
 ## CI/CD
 

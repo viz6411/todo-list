@@ -8,6 +8,7 @@ Both backends expose load_todos() and save_todos() methods.
 """
 import json
 import os
+import tempfile
 
 import gspread
 from gspread.exceptions import GSpreadException, WorksheetNotFound
@@ -15,6 +16,12 @@ from google.oauth2.service_account import Credentials as ServiceCredentials
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.auth.transport.requests import Request as AuthRequest
 from google_auth_oauthlib.flow import InstalledAppFlow
+
+# Support both package import (backend.storage) and direct import (storage)
+try:
+    from . import encryption
+except ImportError:
+    import encryption
 
 COLUMNS = ["id", "title", "completed"]
 
@@ -48,6 +55,7 @@ class GoogleSheetsBackend:
         self._sheet_name = sheet_name
         self._worksheet = None
         self._credentials = None
+        self._temp_files = []
 
         # Determine auth mode
         if oauth_credentials:
@@ -61,6 +69,39 @@ class GoogleSheetsBackend:
             )
 
         self._initialize()
+
+    def __del__(self):
+        """Clean up temporary decrypted files."""
+        for path in self._temp_files:
+            try:
+                if os.path.exists(path):
+                    os.unlink(path)
+            except OSError:
+                pass
+        self._temp_files.clear()
+
+    def _decrypt_file(self, path: str) -> str:
+        """Detect .encrypted files, decrypt to temp location, return path."""
+        if not path.endswith(".encrypted"):
+            return path
+
+        key_path = os.path.join(os.path.dirname(path), ".encryption_key")
+        if not os.path.exists(key_path):
+            raise FileNotFoundError(
+                f"Encrypted credential {path} requires key at {key_path}"
+            )
+
+        key = encryption.load_encryption_key(key_path)
+        encrypted_data = open(path, "rb").read()
+        plaintext = encryption.decrypt(key, encrypted_data)
+
+        temp_path = tempfile.NamedTemporaryFile(
+            suffix=".json", delete=False, mode="w"
+        )
+        temp_path.write(plaintext)
+        temp_path.close()
+        self._temp_files.append(temp_path.name)
+        return temp_path.name
 
     def _initialize(self) -> None:
         """Authenticate and ensure the sheet exists."""
@@ -89,8 +130,9 @@ class GoogleSheetsBackend:
         """Authenticate using OAuth2 credentials."""
         creds = self._oauth_credentials
         if isinstance(creds, str):
-            # Load token from file path
-            with open(creds) as f:
+            # Load token from file path (may be encrypted)
+            creds_path = self._decrypt_file(creds)
+            with open(creds_path) as f:
                 creds = json.load(f)
 
         # Build credentials object
@@ -111,8 +153,10 @@ class GoogleSheetsBackend:
     def _init_service_account(self) -> None:
         """Authenticate using service account credentials."""
         if self._service_account_file:
+            # Detect .encrypted credential files, decrypt to temp
+            cred_path = self._decrypt_file(self._service_account_file)
             credentials = ServiceCredentials.from_service_account_file(
-                self._service_account_file,
+                cred_path,
                 scopes=[
                     "https://www.googleapis.com/auth/spreadsheets",
                     "https://www.googleapis.com/auth/drive",
@@ -179,7 +223,9 @@ def create_backend(backend_type: str = "json", **kwargs):
         return GoogleSheetsBackend(
             oauth_credentials=kwargs.get("oauth_credentials"),
             service_account_file=kwargs.get("service_account_file"),
-            service_account_credentials=kwargs.get("service_account_credentials"),
+            service_account_credentials=kwargs.get(
+                "service_account_credentials"
+            ),
             spreadsheet_id=kwargs["spreadsheet_id"],
             sheet_name=kwargs.get("sheet_name", "Todos"),
         )

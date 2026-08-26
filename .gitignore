@@ -29,4 +29,5 @@ htmlcov/
 **/todos.json
 **/settings.json
 # Encryption key files (auto-generated)
+backend/.encryption_key
 [A-Za-z0-9_-]{43}

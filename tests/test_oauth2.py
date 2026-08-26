@@ -2,7 +2,7 @@
 
 Verifies that GoogleSheetsBackend can authenticate using OAuth2 user
 credentials (regular Google account) instead of service accounts,
-and that Authorization: Bearer tokens are used correctly.
+and that Authorization: Bearer *** are used correctly in HTTP requests.
 """
 import os
 import sys
@@ -64,7 +64,7 @@ class TestOAuth2Initialization:
 
 
 class TestOAuth2BearerToken:
-    """Test that OAuth2 authentication uses Bearer tokens correctly."""
+    """Test that OAuth2 authentication uses Bearer tokens correctly in HTTP requests."""
 
     @pytest.fixture
     def mock_oauth(self, mocker):
@@ -82,14 +82,35 @@ class TestOAuth2BearerToken:
         ws_mock = sp_mock.worksheet.return_value
         return creds_mock
 
-    def test_uses_bearer_authorization(self, mock_oauth, mocker):
-        """GoogleSheetsBackend should use Authorization: Bearer header."""
+    def test_uses_bearer_authorization(self, mocker):
+        """GoogleSheetsBackend passes credentials with Bearer token to gspread.authorize().
+
+        The credentials object passed to gspread.authorize() must contain
+        the access_token which becomes the Bearer value in Authorization headers.
+        """
         from storage import GoogleSheetsBackend
+        # Patch BEFORE creating backend so authorize() is captured
+        creds_mock = mocker.Mock()
+        creds_mock.expired = False
+        creds_mock.refresh_token = "test_refresh"
+        creds_mock.access_token = "test_access"
+        creds_mock.token = "test_access"
+        mocker.patch('storage.OAuthCredentials', return_value=creds_mock)
+        mocker.patch('storage.AuthRequest')
+        gc_mock = mocker.patch('storage.gspread')
+        gc_auth = gc_mock.authorize.return_value
+        sp_mock = gc_auth.open_by_id.return_value
+        ws_mock = sp_mock.worksheet.return_value
+
         backend = GoogleSheetsBackend(
             oauth_credentials={"refresh_token": "test"},
             spreadsheet_id="fake-id",
         )
-        # Verify that authorize was called with Bearer token
+        # Verify credentials contain Bearer token (access_token)
+        assert backend._credentials.access_token == "test_access"
+        # Verify gspread was authorized with credentials carrying Bearer token
+        gc_mock.authorize.assert_called_with(backend._credentials)
+        # Verify auth mode is oauth
         assert backend._auth_mode == "oauth"
 
     def test_refresh_token_persisted(self, mock_oauth, mocker):
@@ -100,9 +121,16 @@ class TestOAuth2BearerToken:
             spreadsheet_id="fake-id",
         )
         assert hasattr(backend, '_credentials')
+        assert backend._credentials.refresh_token == "test_refresh"
 
     def test_bearer_token_in_request_headers(self, mock_oauth, mocker):
-        """API requests should include Authorization: Bearer header."""
+        """API requests include Authorization: Bearer <access_token> header.
+
+        gspread.authorize() receives credentials with an access_token;
+        gspread uses that token to construct Authorization: Bearer <token>
+        on every HTTP request. We verify the token is present on the
+        credentials object passed to authorize().
+        """
         from storage import GoogleSheetsBackend
         gc_mock = mocker.patch('storage.gspread')
         gc_auth = gc_mock.authorize.return_value
@@ -113,8 +141,14 @@ class TestOAuth2BearerToken:
             oauth_credentials={"refresh_token": "test"},
             spreadsheet_id="fake-id",
         )
-        # Verify gspread was authorized with OAuth2 credentials
-        gc_mock.authorize.assert_called()
+        # Verify gspread was authorized with OAuth2 credentials carrying Bearer token
+        gc_mock.authorize.assert_called_once()
+        call_args = gc_mock.authorize.call_args
+        creds_passed = call_args[0][0]
+        # The credentials object MUST have an access_token (the Bearer value)
+        assert hasattr(creds_passed, 'access_token')
+        assert creds_passed.access_token == "test_access"
+        assert creds_passed.refresh_token == "test_refresh"
 
 
 class TestOAuth2TokenRefresh:
