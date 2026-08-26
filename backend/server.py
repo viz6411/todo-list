@@ -35,13 +35,10 @@ def create_app(backend_type=None, **backend_kwargs):
             - sheets: service_account_file, spreadsheet_id, sheet_name
             - settings_path: path to the settings JSON file (optional)
     """
-    explicit_backend_type = backend_type
-
     # Legacy: create_app("/path/to/todos.json")
     if isinstance(backend_type, str) and backend_type.endswith(".json"):
         backend_kwargs.setdefault("storage_path", backend_type)
         backend_type = "json"
-        explicit_backend_type = "json"
 
     # Extract settings_path before passing to backend factory
     settings_path = backend_kwargs.pop("settings_path", None)
