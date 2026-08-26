@@ -1,0 +1,33 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: todo-list:latest
+    container_name: todo-list-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    environment:
+      - BACKEND_TYPE=${BACKEND_TYPE:-json}
+      - STORAGE_PATH=${STORAGE_PATH:-/app/data/todos.json}
+      - PORT=5000
+      - WORKERS=${WORKERS:-2}
+      - PYTHONUNBUFFERED=1
+    # Google Sheets backend (optional, only when BACKEND_TYPE=sheets)
+      - SERVICE_ACCOUNT_FILE=${SERVICE_ACCOUNT_FILE:-}
+      - SPREADSHEET_ID=${SPREADSHEET_ID:-}
+      - SHEET_NAME=${SHEET_NAME:-Todos}
+    volumes:
+      # Persist JSON data across container restarts
+      - todo-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/todos')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  todo-data:
+    driver: local

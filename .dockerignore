@@ -1,0 +1,35 @@
+# Virtual environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Git
+.git/
+.gitignore
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Runtime data
+backend/todos.json
+**/todos.json
+
+# Worktrees from kanban
+.worktrees/
+
+# Local config
+.env
+.flaskenv
+
+# Kanban techlead notes
+techlead_*.md
