@@ -176,7 +176,7 @@ pytest tests/ -v
 docker compose run --rm app pytest tests/ -v
 ```
 
-71 tests cover API logic, frontend integration, settings management, and storage backends.
+109 tests cover API logic, frontend integration, settings management, encryption, OAuth2, and storage backends.
 
 ## Environment Variables Reference
 

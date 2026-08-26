@@ -2,7 +2,7 @@
 
 Provides a uniform interface for persisting todos:
 - JSONFileBackend: file-based JSON storage (default, for local dev)
-- GoogleSheetsBackend: Google Sheets API via gspread + google-auth
+- GoogleSheetsBackend: Google Sheets API via OAuth2 or service account
 
 Both backends expose load_todos() and save_todos() methods.
 """
@@ -12,68 +12,70 @@ import os
 import gspread
 from gspread.exceptions import GSpreadException, WorksheetNotFound
 from google.oauth2.service_account import Credentials as ServiceCredentials
-
+from google.oauth2.credentials import Credentials as OAuthCredentials
+from google.auth.transport.requests import Request as AuthRequest
+from google_auth_oauthlib.flow import InstalledAppFlow
 
 COLUMNS = ["id", "title", "completed"]
-
-
-class JSONFileBackend:
-    """Read/write todos from a local JSON file."""
-
-    def __init__(self, storage_path: str):
-        self._path = storage_path
-
-    def load_todos(self) -> list[dict]:
-        if os.path.exists(self._path):
-            with open(self._path, 'r') as f:
-                content = f.read().strip()
-            if not content:
-                return []
-            return json.loads(content)
-        return []
-
-    def save_todos(self, todos: list[dict]) -> None:
-        with open(self._path, 'w') as f:
-            json.dump(todos, f, indent=2)
 
 
 class GoogleSheetsBackend:
     """Read/write todos from a Google Sheet.
 
     Args:
+        oauth_credentials: OAuth2 credentials dict or token file path.
+            When provided, uses OAuth2 (regular Google account) auth.
         service_account_file: Path to the Google service account JSON key.
+            Legacy auth mode — still supported for backward compatibility.
+        service_account_credentials: Service account credentials dict.
+            Alternative to service_account_file.
         spreadsheet_id: The Google Spreadsheet ID.
         sheet_name: Name of the worksheet to store todos in.
     """
 
     def __init__(
         self,
-        service_account_file: str,
-        spreadsheet_id: str,
-        sheet_name: str = "Todos",
+        oauth_credentials=None,
+        service_account_file=None,
+        service_account_credentials=None,
+        spreadsheet_id=None,
+        sheet_name="Todos",
     ):
+        self._oauth_credentials = oauth_credentials
         self._service_account_file = service_account_file
+        self._service_account_credentials = service_account_credentials
         self._spreadsheet_id = spreadsheet_id
         self._sheet_name = sheet_name
         self._worksheet = None
+        self._credentials = None
+
+        # Determine auth mode
+        if oauth_credentials:
+            self._auth_mode = "oauth"
+        elif service_account_file or service_account_credentials:
+            self._auth_mode = "service_account"
+        else:
+            raise ValueError(
+                "Must provide either oauth_credentials or "
+                "service_account_file/service_account_credentials"
+            )
 
         self._initialize()
 
     def _initialize(self) -> None:
         """Authenticate and ensure the sheet exists."""
-        credentials = ServiceCredentials.from_service_account_file(
-            self._service_account_file,
-            scopes=[
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive",
-            ],
-        )
-        gc = gspread.authorize(credentials)
+        if self._auth_mode == "oauth":
+            self._init_oauth()
+        else:
+            self._init_service_account()
 
+        # Open spreadsheet
         try:
-            spreadsheet = gc.open_by_id(self._spreadsheet_id)
+            spreadsheet = self._gc.open_by_id(self._spreadsheet_id)
         except GSpreadException as exc:
-            raise RuntimeError(f"Cannot open spreadsheet {self._spreadsheet_id}: {exc}") from exc
+            raise RuntimeError(
+                f"Cannot open spreadsheet {self._spreadsheet_id}: {exc}"
+            ) from exc
 
         # Ensure the worksheet exists
         try:
@@ -83,16 +85,63 @@ class GoogleSheetsBackend:
                 self._sheet_name, rows="100", cols="3"
             )
 
+    def _init_oauth(self) -> None:
+        """Authenticate using OAuth2 credentials."""
+        creds = self._oauth_credentials
+        if isinstance(creds, str):
+            # Load token from file path
+            with open(creds) as f:
+                creds = json.load(f)
+
+        # Build credentials object
+        self._credentials = OAuthCredentials(
+            token=creds.get("access_token", ""),
+            refresh_token=creds.get("refresh_token", ""),
+            client_id=creds.get("client_id", ""),
+            client_secret=creds.get("client_secret", ""),
+            token_uri="https://oauth2.googleapis.com/token",
+        )
+
+        # Refresh if expired
+        if self._credentials.expired:
+            self._credentials.refresh(AuthRequest())
+
+        self._gc = gspread.authorize(self._credentials)
+
+    def _init_service_account(self) -> None:
+        """Authenticate using service account credentials."""
+        if self._service_account_file:
+            credentials = ServiceCredentials.from_service_account_file(
+                self._service_account_file,
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive",
+                ],
+            )
+        elif self._service_account_credentials:
+            credentials = ServiceCredentials.from_service_account_info(
+                self._service_account_credentials,
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive",
+                ],
+            )
+        else:
+            raise ValueError("No service account credentials provided")
+
+        self._credentials = credentials
+        self._gc = gspread.authorize(credentials)
+
     def load_todos(self) -> list[dict]:
         """Load all todos from the sheet."""
         records = self._worksheet.get_all_records()
-        # gspread returns string values; coerce completed to bool
         todos = []
         for rec in records:
             todo = {
                 "id": rec.get("id", ""),
                 "title": rec.get("title", ""),
-                "completed": str(rec.get("completed", "False")).lower() in ("true", "1", "yes"),
+                "completed": str(rec.get("completed", "False")).lower()
+                in ("true", "1", "yes"),
             }
             todos.append(todo)
         return todos
@@ -116,7 +165,8 @@ def create_backend(backend_type: str = "json", **kwargs):
         backend_type: 'json' or 'sheets'.
         **kwargs: Passed to the backend constructor.
             - json: storage_path
-            - sheets: service_account_file, spreadsheet_id, sheet_name
+            - sheets: oauth_credentials, service_account_file,
+              service_account_credentials, spreadsheet_id, sheet_name
     """
     if backend_type == "json":
         storage_path = kwargs.get("storage_path")
@@ -127,9 +177,31 @@ def create_backend(backend_type: str = "json", **kwargs):
         return JSONFileBackend(storage_path)
     elif backend_type == "sheets":
         return GoogleSheetsBackend(
-            service_account_file=kwargs["service_account_file"],
+            oauth_credentials=kwargs.get("oauth_credentials"),
+            service_account_file=kwargs.get("service_account_file"),
+            service_account_credentials=kwargs.get("service_account_credentials"),
             spreadsheet_id=kwargs["spreadsheet_id"],
             sheet_name=kwargs.get("sheet_name", "Todos"),
         )
     else:
         raise ValueError(f"Unknown backend_type: {backend_type!r}")
+
+
+class JSONFileBackend:
+    """Read/write todos from a local JSON file."""
+
+    def __init__(self, storage_path: str):
+        self._path = storage_path
+
+    def load_todos(self) -> list[dict]:
+        if os.path.exists(self._path):
+            with open(self._path, 'r') as f:
+                content = f.read().strip()
+            if not content:
+                return []
+            return json.loads(content)
+        return []
+
+    def save_todos(self, todos: list[dict]) -> None:
+        with open(self._path, 'w') as f:
+            json.dump(todos, f, indent=2)

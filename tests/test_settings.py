@@ -27,7 +27,10 @@ class TestSettingsManager:
     def test_load_returns_empty_when_file_missing(self, settings):
         """load should return default empty dict when config file does not exist."""
         result = settings.load()
-        assert result == {"spreadsheet_id": "", "service_account_file": ""}
+        assert result["spreadsheet_id"] == ""
+        assert result["service_account_file"] == ""
+        assert result["oauth_credentials"] == ""
+        assert result["sheet_name"] == "Todos"
 
     def test_save_and_load_roundtrip(self, settings):
         """save then load should return the same values."""
