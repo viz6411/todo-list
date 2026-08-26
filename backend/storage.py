@@ -15,7 +15,6 @@ from gspread.exceptions import GSpreadException, WorksheetNotFound
 from google.oauth2.service_account import Credentials as ServiceCredentials
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.auth.transport.requests import Request as AuthRequest
-from google_auth_oauthlib.flow import InstalledAppFlow
 
 # Support both package import (backend.storage) and direct import (storage)
 try:

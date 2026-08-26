@@ -12,4 +12,5 @@ per-file-ignores =
     tests/test_settings_api.py:E402,E127,F841
     tests/test_storage_backend.py:F401
     validate_workflow.py:F401
+    docker_wsgi.py:E402
     wsgi.py:E402

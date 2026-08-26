@@ -6,7 +6,6 @@ on save and decrypts them on load when an encryption key is available.
 import json
 import os
 import sys
-import tempfile
 
 import pytest
 
