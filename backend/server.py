@@ -190,10 +190,15 @@ def create_app(backend_type=None, **backend_kwargs):
             if storage._initialized and storage._error_message:
                 return jsonify({
                     "status": "sheets_unavailable",
+                    "backend": "sheets",
                     "error": "sheets_unavailable",
                     "message": storage._error_message,
                 }), 503
-        return jsonify({"status": "ok"}), 200
+        backend_type = type(storage).__name__
+        return jsonify({
+            "status": "ok",
+            "backend": backend_type,
+        }), 200
 
     @app.route('/')
     def index():

@@ -41,13 +41,17 @@ USER appuser
 
 EXPOSE 5000
 
+# Install curl for docker-compose healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/todos')" || exit 1
+    CMD curl -f http://localhost:5000/health || exit 1
 
 # Environment defaults
 ENV PYTHONUNBUFFERED=1 \
-    BACKEND_TYPE=json \
+    STORAGE_BACKEND=json \
     STORAGE_PATH=/app/data/todos.json \
     PORT=5000 \
     WORKERS=2
