@@ -7,14 +7,17 @@ Provides a uniform interface for persisting todos:
 Both backends expose load_todos() and save_todos() methods.
 """
 import json
+import logging
 import os
 import tempfile
 
 import gspread
-from gspread.exceptions import GSpreadException, WorksheetNotFound
+from gspread.exceptions import APIError, GSpreadException, WorksheetNotFound
 from google.oauth2.service_account import Credentials as ServiceCredentials
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.auth.transport.requests import Request as AuthRequest
+
+logger = logging.getLogger(__name__)
 
 # Support both package import (backend.storage) and direct import (storage)
 try:
@@ -23,6 +26,15 @@ except ImportError:
     import encryption
 
 COLUMNS = ["id", "title", "completed"]
+
+
+class SheetsUnavailableError(Exception):
+    """Raised when the Google Sheets backend cannot connect.
+
+    The container stays alive — routes return 503 with actionable
+    diagnostic information instead of crashing at import time.
+    """
+    pass
 
 
 class GoogleSheetsBackend:
@@ -37,6 +49,13 @@ class GoogleSheetsBackend:
             Alternative to service_account_file.
         spreadsheet_id: The Google Spreadsheet ID.
         sheet_name: Name of the worksheet to store todos in.
+
+    Note:
+        Initialization is **lazy** — the actual API call to connect to
+        Google Sheets is deferred until the first ``load_todos()`` or
+        ``save_todos()`` call.  This prevents the container from crashing
+        at startup when the spreadsheet ID is wrong or the service account
+        lacks permission.
     """
 
     def __init__(
@@ -55,8 +74,10 @@ class GoogleSheetsBackend:
         self._worksheet = None
         self._credentials = None
         self._temp_files = []
+        self._error_message = None
+        self._initialized = False
 
-        # Determine auth mode
+        # Determine auth mode (validation only — no network call yet)
         if oauth_credentials:
             self._auth_mode = "oauth"
         elif service_account_file or service_account_credentials:
@@ -67,8 +88,6 @@ class GoogleSheetsBackend:
                 "service_account_file/service_account_credentials"
             )
 
-        self._initialize()
-
     def __del__(self):
         """Clean up temporary decrypted files."""
         for path in self._temp_files:
@@ -78,6 +97,78 @@ class GoogleSheetsBackend:
             except OSError:
                 pass
         self._temp_files.clear()
+
+    # ------------------------------------------------------------------
+    # Lazy initialization
+    # ------------------------------------------------------------------
+
+    def _ensure_initialized(self) -> None:
+        """Authenticate and open the spreadsheet on first use.
+
+        If the connection fails, logs a diagnostic message and raises
+        ``SheetsUnavailableError`` so the caller can return 503 instead
+        of crashing.
+        """
+        if self._initialized:
+            return
+
+        try:
+            if self._auth_mode == "oauth":
+                self._init_oauth()
+            else:
+                self._init_service_account()
+
+            # Open spreadsheet (open_by_key works with spreadsheet ID)
+            spreadsheet = self._gc.open_by_key(self._spreadsheet_id)
+
+            # Ensure the worksheet exists
+            try:
+                self._worksheet = spreadsheet.worksheet(self._sheet_name)
+            except WorksheetNotFound:
+                self._worksheet = spreadsheet.add_worksheet(
+                    self._sheet_name, rows="100", cols="3"
+                )
+
+            self._initialized = True
+        except (APIError, GSpreadException) as exc:
+            self._initialized = True  # prevent retry loop
+            self._error_message = self._diagnose(exc)
+            logger.error("Google Sheets unavailable: %s", self._error_message)
+            raise SheetsUnavailableError(self._error_message) from exc
+
+    def _diagnose(self, exc: Exception) -> str:
+        """Build a human-readable diagnostic message for the failure."""
+        code = getattr(exc, "status_code", None)
+        msg = str(exc)
+
+        # Extract service account email for the hint
+        email = None
+        if self._service_account_file:
+            try:
+                with open(self._service_account_file) as f:
+                    sa = json.load(f)
+                email = sa.get("client_email")
+            except Exception:
+                pass
+        elif self._service_account_credentials:
+            email = self._service_account_credentials.get("client_email")
+
+        hint = ""
+        if email:
+            hint = (
+                f"\n\nAction required:\n"
+                f"  1. Open the spreadsheet in Google Sheets\n"
+                f"  2. Share it with this email:\n"
+                f"     {email}\n"
+                f"  3. Make sure SPREADSHEET_ID is set to:\n"
+                f"     {self._spreadsheet_id}"
+            )
+
+        return f"Google Sheets API error [{code}]: {msg}" + hint
+
+    # ------------------------------------------------------------------
+    # Auth helpers (unchanged logic, called only by _ensure_initialized)
+    # ------------------------------------------------------------------
 
     def _decrypt_file(self, path: str) -> str:
         """Detect .encrypted files, decrypt to temp location, return path."""
@@ -101,29 +192,6 @@ class GoogleSheetsBackend:
         temp_path.close()
         self._temp_files.append(temp_path.name)
         return temp_path.name
-
-    def _initialize(self) -> None:
-        """Authenticate and ensure the sheet exists."""
-        if self._auth_mode == "oauth":
-            self._init_oauth()
-        else:
-            self._init_service_account()
-
-        # Open spreadsheet (open_by_key works with spreadsheet ID)
-        try:
-            spreadsheet = self._gc.open_by_key(self._spreadsheet_id)
-        except GSpreadException as exc:
-            raise RuntimeError(
-                f"Cannot open spreadsheet {self._spreadsheet_id}: {exc}"
-            ) from exc
-
-        # Ensure the worksheet exists
-        try:
-            self._worksheet = spreadsheet.worksheet(self._sheet_name)
-        except WorksheetNotFound:
-            self._worksheet = spreadsheet.add_worksheet(
-                self._sheet_name, rows="100", cols="3"
-            )
 
     def _init_oauth(self) -> None:
         """Authenticate using OAuth2 credentials."""
@@ -175,8 +243,13 @@ class GoogleSheetsBackend:
         self._credentials = credentials
         self._gc = gspread.authorize(credentials)
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     def load_todos(self) -> list[dict]:
         """Load all todos from the sheet."""
+        self._ensure_initialized()
         records = self._worksheet.get_all_records()
         todos = []
         for rec in records:
@@ -191,6 +264,7 @@ class GoogleSheetsBackend:
 
     def save_todos(self, todos: list[dict]) -> None:
         """Write all todos to the sheet, replacing existing data."""
+        self._ensure_initialized()
         rows = [COLUMNS]  # header row
         for todo in todos:
             rows.append([

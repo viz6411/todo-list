@@ -106,6 +106,8 @@ class TestOAuth2BearerToken:
             oauth_credentials={"refresh_token": "test"},
             spreadsheet_id="fake-id",
         )
+        # Trigger lazy initialization
+        backend._ensure_initialized()
         # Verify credentials contain Bearer token (access_token)
         assert backend._credentials.access_token == "test_access"
         # Verify gspread was authorized with credentials carrying Bearer token
@@ -120,14 +122,16 @@ class TestOAuth2BearerToken:
             oauth_credentials={"refresh_token": "test"},
             spreadsheet_id="fake-id",
         )
+        # Trigger lazy initialization
+        backend._ensure_initialized()
         assert hasattr(backend, '_credentials')
         assert backend._credentials.refresh_token == "test_refresh"
 
     def test_bearer_token_in_request_headers(self, mock_oauth, mocker):
-        """API requests include Authorization: Bearer <access_token> header.
+        """API requests include Authorization: Bearer *** header.
 
         gspread.authorize() receives credentials with an access_token;
-        gspread uses that token to construct Authorization: Bearer <token>
+        gspread uses that token to construct Authorization: Bearer ***
         on every HTTP request. We verify the token is present on the
         credentials object passed to authorize().
         """
@@ -137,10 +141,12 @@ class TestOAuth2BearerToken:
         sp_mock = gc_auth.open_by_key.return_value
         _ = sp_mock.worksheet.return_value
 
-        _ = GoogleSheetsBackend(
+        backend = GoogleSheetsBackend(
             oauth_credentials={"refresh_token": "test"},
             spreadsheet_id="fake-id",
         )
+        # Trigger lazy initialization
+        backend._ensure_initialized()
         # Verify gspread was authorized with OAuth2 credentials carrying Bearer token
         gc_mock.authorize.assert_called_once()
         call_args = gc_mock.authorize.call_args

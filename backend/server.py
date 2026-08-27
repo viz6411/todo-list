@@ -9,14 +9,14 @@ logger = logging.getLogger(__name__)
 
 # Support both `from backend.server import ...` and `from server import ...`
 try:
-    from .storage import create_backend
+    from .storage import create_backend, SheetsUnavailableError
     from .settings import SettingsManager
 except ImportError:
     # Fallback: run as top-level module (e.g. old tests do `from server import ...`)
     _here = os.path.dirname(__file__)
     if _here not in sys.path:
         sys.path.insert(0, _here)
-    from storage import create_backend
+    from storage import create_backend, SheetsUnavailableError
     from settings import SettingsManager
 
 
@@ -90,7 +90,14 @@ def create_app(backend_type=None, **backend_kwargs):
 
     @app.route('/api/todos', methods=['GET'])
     def get_todos():
-        todos = storage.load_todos()
+        try:
+            todos = storage.load_todos()
+        except SheetsUnavailableError as exc:
+            logger.error("Sheets unavailable: %s", exc)
+            return jsonify({
+                "error": "sheets_unavailable",
+                "message": str(exc),
+            }), 503
         return jsonify(todos), 200
 
     @app.route('/api/todos', methods=['POST'])
@@ -107,9 +114,16 @@ def create_app(backend_type=None, **backend_kwargs):
             "title": str(title).strip(),
             "completed": False
         }
-        todos = storage.load_todos()
-        todos.append(todo)
-        storage.save_todos(todos)
+        try:
+            todos = storage.load_todos()
+            todos.append(todo)
+            storage.save_todos(todos)
+        except SheetsUnavailableError as exc:
+            logger.error("Sheets unavailable: %s", exc)
+            return jsonify({
+                "error": "sheets_unavailable",
+                "message": str(exc),
+            }), 503
         return jsonify(todo), 201
 
     @app.route('/api/todos/<todo_id>', methods=['PATCH'])
@@ -117,7 +131,14 @@ def create_app(backend_type=None, **backend_kwargs):
         data = request.get_json(silent=True)
         if not data:
             return jsonify({"error": "invalid or missing JSON body"}), 400
-        todos = storage.load_todos()
+        try:
+            todos = storage.load_todos()
+        except SheetsUnavailableError as exc:
+            logger.error("Sheets unavailable: %s", exc)
+            return jsonify({
+                "error": "sheets_unavailable",
+                "message": str(exc),
+            }), 503
         for todo in todos:
             if todo["id"] == todo_id:
                 if "title" in data:
@@ -130,7 +151,14 @@ def create_app(backend_type=None, **backend_kwargs):
 
     @app.route('/api/todos/<todo_id>', methods=['DELETE'])
     def delete_todo(todo_id):
-        todos = storage.load_todos()
+        try:
+            todos = storage.load_todos()
+        except SheetsUnavailableError as exc:
+            logger.error("Sheets unavailable: %s", exc)
+            return jsonify({
+                "error": "sheets_unavailable",
+                "message": str(exc),
+            }), 503
         filtered = [t for t in todos if t["id"] != todo_id]
         if len(filtered) == len(todos):
             return jsonify({"error": "not found"}), 404
@@ -149,6 +177,23 @@ def create_app(backend_type=None, **backend_kwargs):
             return jsonify({"error": "invalid or missing JSON body"}), 400
         settings_mgr.save(data)
         return jsonify(settings_mgr.load()), 200
+
+    @app.route('/health')
+    def health():
+        """Health check endpoint.
+
+        Returns 200 when the storage backend is reachable, or 503 with a
+        diagnostic message when Google Sheets is configured but unavailable.
+        """
+        # Check if storage is a GoogleSheetsBackend that has failed init
+        if hasattr(storage, '_initialized') and hasattr(storage, '_error_message'):
+            if storage._initialized and storage._error_message:
+                return jsonify({
+                    "status": "sheets_unavailable",
+                    "error": "sheets_unavailable",
+                    "message": storage._error_message,
+                }), 503
+        return jsonify({"status": "ok"}), 200
 
     @app.route('/')
     def index():

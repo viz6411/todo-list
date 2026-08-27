@@ -76,21 +76,22 @@ class TestGoogleSheetsBackend:
         )
 
     def test_init_creates_sheet_if_missing(self, mock_gspread, mocker):
-        """__init__ should create the sheet if it does not exist."""
+        """Lazy init should create the sheet if it does not exist."""
         from storage import GoogleSheetsBackend
         from gspread.exceptions import WorksheetNotFound
-        # Configure mocks BEFORE constructing the backend so _initialize()
-        # sees the right behaviour.
+        # Configure mocks BEFORE constructing the backend.
         mocker.patch('storage.ServiceCredentials').from_service_account_file.return_value = mocker.Mock()
         gc_mock = mock_gspread.authorize.return_value
         sp_mock = gc_mock.open_by_key.return_value
         sp_mock.worksheet.side_effect = WorksheetNotFound('Sheet not found')
 
-        GoogleSheetsBackend(
+        backend = GoogleSheetsBackend(
             service_account_file='/tmp/fake_sa.json',
             spreadsheet_id='fake-spreadsheet-id',
             sheet_name='Todos',
         )
+        # Trigger lazy initialization
+        backend._ensure_initialized()
         sp_mock.add_worksheet.assert_called_once()
 
     def test_load_todos_empty_sheet(self, sheets_backend, mock_gspread):

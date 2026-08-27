@@ -9,6 +9,8 @@ A Flask-based todo list application with a web frontend, pluggable storage backe
 - **Pluggable storage** — Local JSON file (default) or Google Sheets via service account or OAuth2
 - **Settings management** — Persisted settings with `/api/settings` for backend configuration, including encrypted credentials
 - **Auto-backend selection** — Automatically uses Google Sheets when valid credentials are found
+- **Graceful startup** — Google Sheets backend initializes lazily; invalid credentials don't crash the app
+- **Health checks** — `/health` endpoint for container orchestration and monitoring
 - **CI/CD** — GitHub Actions run linting (flake8) and tests (pytest) on every push
 - **Docker** — Multi-stage Docker build with docker-compose for containerized deployment
 
@@ -81,17 +83,19 @@ Set the following environment variables:
 
 | Variable | Description |
 |---|---|
-| `BACKEND_TYPE` | Set to `sheets` to enable Google Sheets backend |
+| `STORAGE_BACKEND` | Set to `sheets` to enable Google Sheets backend (default: `json`) |
 | `SERVICE_ACCOUNT_FILE` | Path to the Google service account JSON key file (legacy auth) |
+| `OAUTH_CREDENTIALS` | Path to OAuth2 credentials JSON file (OAuth2 user auth) |
 | `SPREADSHEET_ID` | The Google Spreadsheet ID (from the URL) |
 | `SHEET_NAME` | Worksheet name (default: `Todos`) |
-| `OAUTH_CREDENTIALS` | Path to OAuth2 credentials JSON file (OAuth2 user auth) |
 | `OAUTH_REFRESH_TOKEN` | OAuth2 refresh token for persistent authentication |
+
+The app will **start successfully even with invalid credentials** — it defers Google API calls until the first request. If Sheets becomes unavailable, API endpoints return 503 with actionable error messages.
 
 Example (Service Account):
 
 ```bash
-export BACKEND_TYPE=sheets
+export STORAGE_BACKEND=sheets
 export SERVICE_ACCOUNT_FILE=/keys/sa.json
 export SPREADSHEET_ID=1BxiMVs0XRA5nFMzKZb7ZnKlBbNPDsr
 export SHEET_NAME=MyTodos
@@ -102,7 +106,7 @@ python backend/server.py
 Example (OAuth2):
 
 ```bash
-export BACKEND_TYPE=sheets
+export STORAGE_BACKEND=sheets
 export OAUTH_CREDENTIALS=/keys/oauth2.json
 export SPREADSHEET_ID=1BxiMVs0XRA5nFMzKZb7ZnKlBbNPDsr
 export SHEET_NAME=MyTodos
@@ -140,6 +144,7 @@ All API endpoints return JSON.
 
 | Method | Endpoint | Description |
 |---|---|---|
+| `GET` | `/health` | Health check endpoint (returns status + backend info) |
 | `GET` | `/api/todos` | List all todos |
 | `POST` | `/api/todos` | Create a new todo |
 | `PATCH` | `/api/todos/<id>` | Update a todo |
@@ -180,17 +185,21 @@ curl -X DELETE http://localhost:5000/api/todos/<id>
 ```
 todo-list/
 ├── backend/
-│   ├── server.py        # Flask app with REST API
-│   ├── storage.py       # Pluggable storage backends
+│   ├── server.py        # Flask app with REST API + /health endpoint
+│   ├── storage.py       # Pluggable storage backends (lazy init for Sheets)
+│   ├── settings.py      # Settings management with encryption
+│   ├── encryption.py    # Credential encryption utilities
 │   └── wsgi.py          # WSGI entry point
 ├── frontend/
 │   ├── index.html       # Web UI
 │   ├── css/style.css    # Styles
 │   └── js/app.js        # Frontend logic
 ├── tests/               # pytest test suite
+├── docker_wsgi.py       # Docker WSGI entry point (env validation + graceful startup)
 ├── requirements.txt     # Python dependencies
-├── docker-compose.yml   # Docker Compose configuration
+├── docker-compose.yml   # Docker Compose configuration (healthcheck included)
 ├── Dockerfile           # Multi-stage Docker build
+├── .env.example         # Environment variable template
 └── wsgi.py              # Root-level WSGI entry point
 ```
 
@@ -210,13 +219,15 @@ docker compose run --rm app pytest tests/ -v
 
 | Variable | Default | Description |
 |---|---|---|
-| `BACKEND_TYPE` | `json` | Storage backend: `json` or `sheets` |
+| `STORAGE_BACKEND` | `json` | Storage backend: `json` or `sheets` |
 | `STORAGE_PATH` | `backend/todos.json` | Path to the JSON storage file |
 | `SERVICE_ACCOUNT_FILE` | — | Path to Google service account JSON key |
+| `OAUTH_CREDENTIALS` | — | Path to OAuth2 credentials JSON file |
 | `SPREADSHEET_ID` | — | Google Spreadsheet ID |
 | `SHEET_NAME` | `Todos` | Worksheet name |
-| `OAUTH_CREDENTIALS` | — | Path to OAuth2 credentials JSON file |
 | `OAUTH_REFRESH_TOKEN` | — | OAuth2 refresh token for persistent auth |
+
+When `STORAGE_BACKEND=sheets` is set but credentials are invalid, the app still starts and serves requests using the JSON fallback. The `/health` endpoint reports the actual backend status.
 
 ## CI/CD
 
